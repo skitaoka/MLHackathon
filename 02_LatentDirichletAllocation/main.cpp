@@ -87,6 +87,7 @@ std::pair<std::vector<double>, std::vector<double>>
 
   // ギブスサンプリング
   for (std::size_t s = 0; s < sample_size; ++s) {
+    std::cout << '\r' << s;
     for (std::size_t m = 0; m < M; ++m) {
       for (std::size_t i = n[m], count = n[m + 1]; i < count; ++i) {
         std::size_t const v = w[i];
@@ -195,7 +196,7 @@ try
     }
   }
 
-  auto const theta_phi = lda(w, n, M, V, K, alpha, beta, 10000);
+  auto const theta_phi = lda(w, n, M, V, K, alpha, beta, 1000);
 
   // 文章ごとのトピック分布
   for (std::size_t m = 0; m < M; ++m) {
