@@ -11,6 +11,25 @@
 #include <map>
 #include <vector>
 
+namespace reactor
+{
+  namespace statistics
+  {
+    // 累積密度関数 [first, last) からサンプリング
+    template <typename Iterator>
+    std::size_t sample(Iterator first, Iterator last, std::mt19937_64 & engine)
+    {
+      if (first == last) {
+        return 0;
+      }
+      std::size_t const size = std::distance(first, last);
+      std::uniform_real_distribution<std::iterator_traits<Iterator>::value_type>
+        runif(0.0, first[size - 1]);
+      return std::distance(first, std::lower_bound(first, last, runif(engine)) - 1);
+    }
+  }
+}
+
 // cf. http://d.hatena.ne.jp/n_shuyo/20110215/lda
 // w: 単語
 // n: w の n[m] から n[m+1]-1 までが m-th 文章の単語
@@ -35,9 +54,9 @@ void lda(
   // 各単語のトピック
   std::vector<std::size_t> z(w.size());
   {
-    std::uniform_int_distribution<std::size_t> runif(0, K-1);
+    auto runif(std::bind(std::uniform_int_distribution<std::size_t>(0, K-1), std::ref(engine)));
     for (std::size_t i = 0, size = z.size(); i < size; ++i) {
-      z[i] = runif(engine);
+      z[i] = runif();
     }
   }
 
@@ -93,8 +112,8 @@ void lda(
         }
 
         // あたらしいトピックをサンプリング
-        std::size_t t = 0;
-        for (double const xi = std::uniform_real_distribution<double>(0.0, theta[K])(engine); xi > theta[t + 1]; ++t);
+        std::size_t const t = reactor::statistics::sample(
+          std::begin(theta), std::end(theta), engine);
 
         ++n_mk[m * K + t];
         ++n_vk[v * K + t];
@@ -150,10 +169,10 @@ int main(int argc, char* argv[])
   // トピックごとの累積単語分布をつくる
   std::vector<double> phi(K * (V + 1));
   {
-    std::gamma_distribution<double> rgamma(beta, 1.0);
+    auto rgamma(std::bind(std::gamma_distribution<double>(beta, 1.0), std::ref(engine)));
     for (std::size_t k = 0; k < K; ++k) {
       for (std::size_t v = 0; v < V; ++v) {
-        phi[k * (V + 1) + (v + 1)] = phi[k * (V + 1) + v] + rgamma(engine);
+        phi[k * (V + 1) + (v + 1)] = phi[k * (V + 1) + v] + rgamma();
       }
     }
   }
@@ -161,10 +180,10 @@ int main(int argc, char* argv[])
   // 文章ごとの累積トピック分布をつくる
   std::vector<double> theta(M * (K + 1));
   {
-    std::gamma_distribution<double> rgamma(alpha, 1.0);
+    auto rgamma(std::bind(std::gamma_distribution<double>(alpha, 1.0), std::ref(engine)));
     for (std::size_t m = 0; m < M; ++m) {
       for (std::size_t k = 0; k < K; ++k) {
-        theta[m * (K + 1) + (k + 1)] = theta[m * (K + 1) + k] + rgamma(engine);
+        theta[m * (K + 1) + (k + 1)] = theta[m * (K + 1) + k] + rgamma();
       }
     }
   }
@@ -172,12 +191,14 @@ int main(int argc, char* argv[])
   for (std::size_t m = 0; m < M; ++m) {
     for (std::size_t i = n[m], count = n[m + 1]; i < count; ++i) {
       // トピックをサンプリング
-      std::size_t k = 0;
-      for (double const xi = std::uniform_real_distribution<double>(0.0, theta[m * (K + 1) + K])(engine); xi > theta[m * (K + 1) + (k + 1)]; ++k);
+      std::size_t const k = reactor::statistics::sample(
+        std::begin(theta) + ((m + 0) * (K + 1)),
+        std::begin(theta) + ((m + 1) * (K + 1)), std::ref(engine));
 
       // k-th トピックの単語分布から単語 v をサンプリング
-      std::size_t v = 0;
-      for (double const xi = std::uniform_real_distribution<double>(0.0, phi[k * (V + 1) + V])(engine); xi > phi[k * (V + 1) + (v + 1)]; ++v);
+      std::size_t const v = reactor::statistics::sample(
+        std::begin(phi) + ((k + 0) * (V + 1)),
+        std::begin(phi) + ((k + 1) * (V + 1)), std::ref(engine));
 
       w[i] = v;
     }
